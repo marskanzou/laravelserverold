@@ -1,0 +1,27 @@
+<?php
+
+use Illuminate\Support\Facades\Broadcast;
+
+/*
+|--------------------------------------------------------------------------
+| Broadcast Channels
+|--------------------------------------------------------------------------
+|
+| Here you may register all of the event broadcasting channels that your
+| application supports. The given channel authorization callbacks are
+| used to check if an authenticated user can listen to the channel.
+|
+*/
+
+Broadcast::channel('App.Models.User.{id}', function ($user, $id) {
+    return (int) $user->id === (int) $id;
+});
+
+Broadcast::channel('chat.{itemOfferId}', function ($user, $itemOfferId) {
+    return \App\Models\ItemOffer::where('id', $itemOfferId)
+        ->where(function ($query) use ($user) {
+            $query->where('seller_id', $user->id)
+                  ->orWhere('buyer_id', $user->id);
+        })->exists();
+   //? $user : null;
+});
