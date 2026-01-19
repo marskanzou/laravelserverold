@@ -37,3 +37,10 @@ public/hot
 /.vscode/
 /.DS_Store
 Thumbs.db
+
+# Editor backup files
+*.save
+*.save.*
+*~
+*.swp
+*.swo
