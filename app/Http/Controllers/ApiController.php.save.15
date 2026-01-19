@@ -6431,7 +6431,7 @@ if (!empty($user_token)) {
     );
 }
 
-            return ResponseService::successResponse(__('Application status updated.'), $application);
+            return ResponseService::successResponse(__('تم تحديث حالة التطبيق'), $application);
 
         } catch (Throwable $th) {
             ResponseService::logErrorResponse($th, "API Controller -> updateJobStatus");

@@ -90,56 +90,6 @@
 &nbsp;
 &nbsp;
 
-                    {{-- Other Details - Custom Fields --}}
-                   <div class="tab-pane fade" id="custom">
-                        <div class="row">
-                            @forelse($custom_fields as $field)
-                                <div class="col-md-6 mb-3">
-                                    <label>{{ $field->name }} @if($field->required) <span class="text-danger">*</span> @endif</label>
-
-                                    @php
-                                        $isRequired = '';
-                                    @endphp
-
-                                    @if($field->type === 'textbox')
-                                        <input type="text" name="custom_fields[{{ $field->id }}]" class="form-control" value="{{ $field->value ?? '' }}" {{ $isRequired }}>
-
-                                    @elseif($field->type === 'number')
-                                        <input type="number" name="custom_fields[{{ $field->id }}]" class="form-control" value="{{ $field->value ?? '' }}" {{ $isRequired }}>
-
-                                    @elseif($field->type === 'fileinput')
-                                        <input type="file" name="custom_field_files[{{ $field->id }}]" class="form-control" {{ $isRequired }}>
-                                        @if(!empty($field->value))
-                                            <img src="{{ $field->value[0] ?? '' }}" alt="" width="100">
-                                        @endif
-
-                                    @elseif($field->type === 'dropdown' || $field->type === 'radio')
-                                        @php $options = is_array($field->values) ? $field->values : json_decode($field->values, true); @endphp
-                                        <select name="custom_fields[{{ $field->id }}]" class="form-select" {{ $isRequired }}>
-                                            <option value="">{{ __('Select') }}</option>
-                                            @foreach($options as $option)
-                                                <option value="{{ $option }}" {{ $field->value == $option ? 'selected' : '' }}>{{ $option }}</option>
-                                            @endforeach
-                                        </select>
-
-                                    @elseif($field->type === 'checkbox')
-                                        @php $options = is_array($field->values) ? $field->values : json_decode($field->values, true); @endphp
-                                        @foreach($options as $option)
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="checkbox" name="custom_fields[{{ $field->id }}][]" value="{{ $option }}"
-                                                    {{ is_array($field->value) && in_array($option, $field->value) ? 'checked' : '' }} {{ $isRequired }}>
-                                                <label class="form-check-label">{{ $option }}</label>
-                                            </div>
-                                        @endforeach
-                                    @endif
-
-                                </div>
-                            @empty
-                                <p class="text-muted">{{ __('No custom fields for this category.') }}</p>
-                            @endforelse
-                        </div>
-                    </div>
-
 &nbsp;
 &nbsp;
 

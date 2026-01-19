@@ -34,6 +34,176 @@ class ItemController extends Controller
         return view('items.index', compact('countries', 'cities'));
     }
 
+
+public function update(Request $request, $id)
+{
+    ResponseService::noPermissionThenSendJson('advertisement-update');
+
+    DB::beginTransaction();
+
+    try {
+        $item = Item::with('user')->findOrFail($id);
+        $category = Category::findOrFail($request->category_id);
+
+        $isJobCategory = $category->is_job_category;
+        $isPriceOptional = $category->price_optional;
+
+        // إعداد القواعد الديناميكية للـ Validation
+        $rules = [
+            'name'                 => 'required|string|max:255',
+            'slug'                 => 'nullable|regex:/^[a-z0-9-]+$/',
+            'description'          => 'nullable|string',
+            'latitude'             => 'nullable|numeric',
+            'longitude'            => 'nullable|numeric',
+            'address'              => 'nullable|string|max:500',
+            'contact'              => 'nullable|string|max:50',
+            'image'                => 'nullable|mimes:jpeg,jpg,png|max:7168',
+            'custom_fields'        => 'nullable',
+            'custom_field_files'   => 'nullable|array',
+            'custom_field_files.*' => 'nullable|mimes:jpeg,png,jpg,pdf,doc|max:7168',
+            'gallery_images'       => 'nullable|array',
+            'admin_edit_reason'    => 'required|string|max:1000',
+            'city'                 => 'nullable|exists:cities,id',
+            'state'                => 'nullable|exists:states,id',
+            'country'              => 'nullable|exists:countries,id',
+            'area'                 => 'nullable|exists:areas,id',
+        ];
+
+        // شرط السعر أو الراتب
+        if (!$isJobCategory && !$isPriceOptional) {
+            $rules['price'] = 'required|numeric|min:0';
+        } else {
+            $rules['min_salary'] = 'nullable|numeric|min:0';
+            $rules['max_salary'] = 'nullable|numeric|gte:min_salary';
+        }
+
+        $validator = Validator::make($request->all(), $rules);
+        if ($validator->fails()) {
+            return back()->withErrors($validator)->withInput();
+        }
+
+        // تحديث الحقول الأساسية
+        $fieldsToUpdate = ['name', 'slug', 'description', 'price', 'min_salary', 'max_salary', 'contact', 'admin_edit_reason'];
+        foreach ($fieldsToUpdate as $field) {
+            if ($request->filled($field)) {
+                $item->$field = $request->$field;
+            }
+        }
+
+        // العنوان والإحداثيات
+        if ($request->filled('manual_address')) {
+            $item->address   = $request->manual_address;
+            $item->city      = $request->city ? City::find($request->city)->name : $item->city;
+            $item->state     = $request->state ? State::find($request->state)->name : $item->state;
+            $item->country   = $request->country ? Country::find($request->country)->name : $item->country;
+            $item->latitude  = $request->latitude ?? $item->latitude;
+            $item->longitude = $request->longitude ?? $item->longitude;
+        } elseif ($request->filled('address_input')) {
+            $item->address   = $request->address_input;
+            $item->city      = $request->city_input ?? $item->city;
+            $item->state     = $request->state_input ?? $item->state;
+            $item->country   = $request->country_input ?? $item->country;
+            $item->latitude  = $request->latitude ?? $item->latitude;
+            $item->longitude = $request->longitude ?? $item->longitude;
+        }
+
+        // علامة التعديل من الأدمن
+        $item->is_edited_by_admin = 1;
+
+        // تحديث الصورة الرئيسية إذا تم رفعها
+        if ($request->hasFile('image')) {
+            $item->image = FileService::compressAndReplace($request->file('image'), 'uploads/items', $item->getRawOriginal('image'));
+        }
+
+        $item->save();
+
+        // تحديث الحقول المخصصة
+        if ($request->custom_fields) {
+            $itemCustomFieldValues = [];
+            foreach ($request->custom_fields as $fieldId => $value) {
+                $valueToStore = is_array($value) ? json_encode($value, JSON_THROW_ON_ERROR) : $value;
+                $itemCustomFieldValues[] = [
+                    'item_id'         => $item->id,
+                    'custom_field_id' => $fieldId,
+                    'value'           => $valueToStore,
+                    'updated_at'      => now(),
+                ];
+            }
+            if (!empty($itemCustomFieldValues)) {
+                ItemCustomFieldValue::upsert($itemCustomFieldValues, ['item_id', 'custom_field_id'], ['value', 'updated_at']);
+            }
+        }
+
+        // رفع ملفات الحقول المخصصة
+        if ($request->hasFile('custom_field_files')) {
+            foreach ($request->file('custom_field_files') as $fieldId => $file) {
+                $existing = ItemCustomFieldValue::where([
+                    'item_id' => $item->id,
+                    'custom_field_id' => $fieldId
+                ])->first();
+
+                $path = $existing
+                    ? FileService::replace($file, 'custom_fields_files', $existing->getRawOriginal('value'))
+                    : FileService::upload($file, 'custom_fields_files');
+
+                ItemCustomFieldValue::updateOrCreate(
+                    ['item_id' => $item->id, 'custom_field_id' => $fieldId],
+                    ['value' => $path, 'updated_at' => now()]
+                );
+            }
+        }
+
+        // رفع صور gallery جديدة
+        if ($request->hasFile('gallery_images')) {
+            foreach ($request->file('gallery_images') as $file) {
+                ItemImages::create([
+                    'image'   => FileService::compressAndUpload($file, 'uploads/items'),
+                    'item_id' => $item->id,
+                ]);
+            }
+        }
+
+        // حذف صور gallery محددة
+        if (!empty($request->delete_item_image_id)) {
+            foreach ($request->delete_item_image_id as $imageId) {
+                $img = ItemImages::find($imageId);
+                if ($img) {
+                    FileService::delete($img->getRawOriginal('image'));
+                    $img->delete();
+                }
+            }
+        }
+
+        DB::commit();
+
+        // إرسال إشعار FCM للمستخدم
+        $user_tokens = UserFcmToken::where('user_id', $item->user->id)->pluck('fcm_token')->toArray();
+       if (!empty($user_tokens)) {
+           NotificationService::sendFcmNotification(
+                $user_tokens,
+               'ول اعلانك ' . $item->name,
+            "تم تعديل اعلانك من قبل الادمن",
+         "item-edit",
+       ['id' => $item->id]
+        );
+        }
+
+
+
+
+        $route = ($item->status === 'approved' && (is_null($item->expired_at) || $item->expired_at > now()) && is_null($item->deleted_at))
+                    ? route('advertisement.index')
+                    : route('advertisement.requested.index');
+
+        return ResponseService::successRedirectResponse("Advertisement Updated Successfully", $route);
+
+    } catch (\Throwable $th) {
+        DB::rollBack();
+        report($th);
+        return redirect()->back()->with('error', 'An error occurred while updating the item.');
+    }
+}
+
     public function show($status, Request $request)
     {
         try {

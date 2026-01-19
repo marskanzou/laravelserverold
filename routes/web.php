@@ -211,7 +211,7 @@ Route::group(['middleware' => ['auth', 'language']], static function () {
 Route::get('/get-subsubcategories/{categoryId}/{subcategoryId}', [CategoryController::class, 'getSubsubcategories']);
     Route::get('/advertisement/{status}',[ItemController::class,'show'])->name('advertisement.show');
     Route::resource('advertisement', ItemController::class)->except(['show', 'edit']);
-    Route::get('item/cities/search', [ItemController::class, 'searchCities'])->name('cities.search');
+    Route::get('item/cities/search', [ItemController::class, 'searchCities']);
     /*** Item Module : END ***/
 
     Route::resource('seller-review', SellerController::class);
